@@ -2,7 +2,7 @@
 /*
  * GPS-UART-BUF.c
  *
- * Created: 28/09/2018 5:37:46 PM
+ * Created: 08/05/2018 5:37:46 PM
  * Author : Madiva
  */ 
 #define F_CPU 1000000UL
@@ -39,9 +39,9 @@ char fix; int e;
 
 char input;
 char buff[20];
-char company[]	= "+254XXXXXXXXX";// //M's No#
-char company2[]	= "+254XXXXXXXXX";// //F's no#
-char owner[]	= "+254XXXXXXXXX"; //K's no#
+char company[]	= "+254XXXXXXXXX";// //Moha's No#
+char company2[]	= "+254700000000";// //Fatah's no#
+char owner[]	= "+254XXXXXXXXX"; //Kevin's no#
 
 //static FILE uart0_output = FDEV_SETUP_STREAM(USART0_Transmit, NULL, _FDEV_SETUP_WRITE);
 //static FILE uart1_output = FDEV_SETUP_STREAM(USART0_Transmit, NULL, _FDEV_SETUP_WRITE);
@@ -69,6 +69,8 @@ int checkOKstatus(int p);
 #define CHOSEN_SECTOR 0
 #define BUFFER_SIZE 24
 
+
+
 int main( void )
 {
  	CAR_OFF;
@@ -76,6 +78,7 @@ int main( void )
 	/**************************SD-CODE-TESTING************************************/
 	/* LED for result feedback PA3 (active High) */
 	DDRA |= (1 << 3);		//set 3bit of Data Direction Register Aas output 
+	DDRA &= ~(1<<DDA0);     //set bit 0 of DDRA to input
 	PORTA |= (1 << 3);		//set PORTA bit 3 as HIGH
 	DDRA &= ~(1 << 5);
 	_delay_us(1000);
@@ -87,11 +90,23 @@ int main( void )
 	
  	stdin = &uart0_input;
  	stdout = &uart1_output; //changed to TX1 for GSM communication. TX0 on Atmega SMD isnt working
+	 
+// 	PCMSK0 |= (1<<PCINT0);
+// 	PCICR |= (1<<PCIE0);
+// 	sei(); //enable blobal interrupts
 	
 	_delay_ms(13000);
+			printf("AT\r\n");
+			_delay_ms(2000);
+			printf("AT+CMGF=1\r\n");
+			_delay_ms(2000);
+	
 	initialstatus();
+	int S=0;
+	
 	while(1) 
 	{
+		while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 		HTTPTransmit1 ();
 		fdev_close();
 		stdout = &uart1_output;
@@ -103,11 +118,30 @@ int main( void )
 		fdev_close();
 		stdout = &uart1_output; 
 		stdin = &uart0_input;
+		while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 		HTTPTransmit2 ();
+		while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 		checknewSMS();
+		while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+		initialstatus();
+		S++;
+		if (S==100)
+		{ S=0; /*printf("AT+CFUN=0\r\n"); _delay_ms(2000);*/ printf("AT+CFUN=1\r\n");  _delay_ms(10000); } 
+		else { }
+		
 	}
 	return 0;
 }
+
+// ISR(PCINT0_vect)
+// {
+// 	while (!(PINA & (1<<PINA0))) //While the phone is ringing
+// 	{	_delay_ms(5000); }
+// 
+// 	PINB |= (1<<PINB1);
+// 	printf("AT\r\n");
+// 	_delay_ms(1000);
+// }
 
 int checkOKstatus(int p)
 {
@@ -159,11 +193,18 @@ int checkOKstatus(int p)
 	{
 		int V=0;
 		w = getchar();
-		while(V==0) ///////////////////
-		{ 	if (w==':')		{V=1;}
-			else if(w=='E')	{V=2;}
-			w = getchar(); 
+		if (byteGPS == -1)
+			{/*empty port*/_delay_ms(2000);}
+		else
+		{
+// 			while(V==0) ///////////////////
+// 			{ 	if (w==':')		{V=1;}
+// 			else if(w=='E')	{V=2;}
+// 			w = getchar();
+			while (V<2)
+			{ if(w==0x0A) {V++;} w = getchar();}
 		}
+
 	}
 	
 	else{}
@@ -177,11 +218,14 @@ unsigned char CheckSMS()
 	y=0;
 	a=0;
 	printf("AT\r\n");
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
   	checkOKstatus(1);
 	 _delay_ms(500);
 	printf("AT+CMGF=1\r\n");
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
   	checkOKstatus(1);
 	 _delay_ms(500);
+	 while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 	printf("AT+CMGL=\"REC UNREAD\"\r\n");
 	while (a < 2) //skip the <LF>
 	{
@@ -212,36 +256,43 @@ unsigned char CheckSMS()
 				CreateDraft(w);
 			}
 			else //A scenario of receiving text from Unauthorized no#
-			{	status[0] = 2; printf("AT+CMGD=1,2\r\n"); _delay_ms(2000);} //clearing all SMS in storage AREA except Draft and UNREAD SMS
+			{	status[0] = 2; printf("AT+CMGD=1,2\r\n"); while (!(PINA & (1<<PINA0))) { }; _delay_ms(2000);} //clearing all SMS in storage AREA except Draft and UNREAD SMS
 		}
 		else if (w==0x24) //If a $ is received
 		{
 //			IP_Change_Command();
-			status[0] = 6; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); _delay_ms(2000);
+			status[0] = 6; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); while (!(PINA & (1<<PINA0))) { }; _delay_ms(2000);
 		}
 		else
-		{	status[0] = 6; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); _delay_ms(2000);} //clearing all SMS in storage AREA except Draft and UNREAD SMS
+		{	status[0] = 6; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); while (!(PINA & (1<<PINA0))) { }; _delay_ms(2000);} //clearing all SMS in storage AREA except Draft and UNREAD SMS
 	}
 	else if(w==0x04F) // if w = 'O'
 	{
 		w = getchar();
 		if (w==0x04B) // if w = 'K'  If there is no new message
-		{	status[0] = 3; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); _delay_ms(2000);}
+		{	status[0] = 3; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); while (!(PINA & (1<<PINA0))) { }; _delay_ms(2000);}
 		else
-		{	status[0] = 4; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); _delay_ms(2000);}
+		{	status[0] = 4; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); while (!(PINA & (1<<PINA0))) { }; _delay_ms(2000);}
 	}
-	else {	status[0] = 5; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); _delay_ms(2000);} 
+	else {	status[0] = 5; status[1] = status[2] = status[3] = 0; printf("AT+CMGD=1,2\r\n"); while (!(PINA & (1<<PINA0))) { }; _delay_ms(2000);} 
 
 	return *status;
 }
 
+
+//READ DRAFT WHEN SIM IS CREDITED TO AVOID ERROR DURING DATA TRANSMISSION .......TO BE DONE
+
+
 void checknewSMS()
 {
 		printf("AT\r\n");
+		while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 		checkOKstatus(1);
 		printf("AT+CMGF=1\r\n");
+		while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 		checkOKstatus(1);
 		printf("AT+CPMS?\r\n");
+		while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 		checkOKstatus(3);
 		_delay_ms(1000);
 }
@@ -249,6 +300,7 @@ void checknewSMS()
 void CreateDraft(char m)
 {
 	printf("AT+CMGD=1,4\r\n"); //clearing all SMS in storage AREA
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 	checkOKstatus(1);
 	printf("AT+CMGW=\"");
 	PrintSender();
@@ -301,41 +353,46 @@ unsigned char CompareNumber()
 void HTTPTransmit1 () //char *GPS0, char *GPS1, char *number)
 {
 	printf("AT\r\n");
-  	checkOKstatus(1);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+  	checkOKstatus(1); _delay_ms(500);
 	printf("AT+CGATT=1\r\n");
-  	checkOKstatus(1);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(500);;
 	printf("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"\r\n");
-	checkOKstatus(1);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(500);
 	printf("AT+SAPBR=3,1,\"APN\",\"safaricom\"\r\n");
-	checkOKstatus(1);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(500);
 	printf("AT+SAPBR=1,1\r\n");
-	checkOKstatus(1);
-	_delay_ms(2000);
+//	checkOKstatus(1);
+	_delay_ms(8000);
 	printf("AT+HTTPINIT\r\n");
-	checkOKstatus(1);
-	_delay_ms(500);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(500);
 	printf("AT+HTTPPARA=\"CID\",1\r\n");
-	checkOKstatus(1);
-	_delay_ms(500);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(500);
 }
 
 void HTTPTransmit2 ()
 {
-		printf("AT+HTTPSSL=1\r\n");
-		checkOKstatus(1);
-		_delay_ms(1000);
-		printf("AT+HTTPACTION=1\r\n"); //Ends with "+HTTPACTION" after 4 X "/n"
-		checkOKstatus(4);
-		_delay_ms(1000);
-		printf("AT+HTTPREAD\r\n"); ////////////////////////Starts With +HTTPREAD
-		checkOKstatus(4);
-		_delay_ms(1000);
-		printf("AT+HTTPTERM\r\n");
-		checkOKstatus(1);
-		_delay_ms(500);
-		printf("AT+SAPBR=0,1\r\n");
-		checkOKstatus(1);
-		_delay_ms(2000);	
+	printf("AT+HTTPSSL=1\r\n");
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(1000);
+	printf("AT+HTTPACTION=1\r\n"); //Ends with "+HTTPACTION" after 4 X "/n"
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(8000);
+//	checkOKstatus(4);
+// 	printf("AT+HTTPREAD\r\n"); ////////////////////////Starts With +HTTPREAD
+// 	checkOKstatus(4);
+// 	_delay_ms(1000);
+	printf("AT+HTTPTERM\r\n");
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
+	checkOKstatus(1); _delay_ms(500);
+	printf("AT+SAPBR=0,1\r\n");
+//	checkOKstatus(1);
+	_delay_ms(8000);	
 }
 
 unsigned char initialstatus()
@@ -344,15 +401,19 @@ unsigned char initialstatus()
 	y=0;
 	a=0;
 	printf("AT\r\n");
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
   	//checkOKstatus(1);
   	_delay_ms(2000);
 	putchar(0x1A); //putting AT-MSG termination CTRL+Z in USART just in case it hangs at message or TCP sending
 	_delay_ms(2000);
 	
 	printf("AT+CMGF=1\r\n");
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 	checkOKstatus(1);
 	printf("AT+CPMS=\"MT\",\"SM\",\"ME\"\r\n");
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 	_delay_ms(2000);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing
 	printf("AT+CPMS?\r\n");
 	w = getchar();
 	while (w !=  0x2B) //w is not +
@@ -367,7 +428,8 @@ unsigned char initialstatus()
 	if (w != 0x30)	{CheckSMS();}
 	else {}	
 		_delay_ms(500);
-	//_delay_ms(2000);	
+	//_delay_ms(2000);
+	while (!(PINA & (1<<PINA0))) { } //While the phone is ringing	
 	printf("AT+CMGR=1\r\n");
 	while (a < 2) //skip the <LF>
 	{
@@ -450,27 +512,24 @@ void grabGPS()
 				satellites[0]='\0';
 				satellites[1]='\0';
 
-				for (int i=1;i<datacount;i++)
-				{
-					if (linea[i]==0x2C)	//skip through the "commas" in GGA string
-					{e++; 
-					 if (e==6) {p=i;} 	//Get to the comma before the "Fix" in GGA
-					 if (e==7) {u=i;}	//Get to the comma before the "no# of satellites" in GGA
-					}	
-				}			
+			for (int i=1;i<datacount;i++)
+			{
+				if (linea[i]==0x2C)
+				{e++; if (e==6) {p=i;} if (e==7) {u=i;}}	
+			}			
 				fix=linea[p+1];
 				satellites[0]=linea[u+1];
 				satellites[1]=linea[u+2];
 							
-				GGA = (char*) malloc(datacount+1);	//allocating memory to the GGA string, where datacount is length of GPS GGA string
-				strcpy(GGA,linea);			//using function strcpy to copy the char array(linea) to GGA string which we have allocated memory above
-				y=1;					//one half of the conditions to exit while(x==0 || y==0) function
+				GGA = (char*) malloc(datacount+1);			//allocating memory to the GGA string, where datacount is length of GPS GGA string
+				strcpy(GGA,linea);							//using function strcpy to copy the char array(linea) to GGA string which we have allocated memory above
+				y=1;										//one half of the conditions to exit while(x==0 || y==0) function
 			}
 			if(bien1==6) // If initial characters match "+GPRMC" string, process the data
 			{
 				//linea[0]='\n';
-				linea[0]=0x2D;				//eliminate the "\r" or "\n" just before the GPS RMC string 
-				linea[datacount1]=0x00;			//Dictate EOL for the RMC string by putting the "nil" character
+				linea[0]=0x2D;
+				linea[datacount1]=0x00;
 				linea[datacount1-1]=0x00;
 				RMC = (char*) malloc(datacount1+1);
 				strcpy(RMC,linea);
@@ -480,13 +539,13 @@ void grabGPS()
 			if (x==1 && y==1)
 			{
 				phone[13]=0x00;
-				Digits = (char*) malloc(13);	//allocate memory for the phone number that text the tracker 
-				strcpy(Digits,phone)		//save the number that texted to a char string
+				Digits = (char*) malloc(13);//allocate memory for the phone number that text the tracker 
+				strcpy(Digits,phone);		//save the number that texted to a char string
 				
 				_delay_ms(500);
-				printf("AT+HTTPPARA=\"URL\",\"****WEB-API****?ID=201800001&String=%c:%s:%c:%c%c:%s\"\r\n",status[0],Digits,fix, satellites[0], satellites[1], RMC); //
-//				printf("AT+HTTPPARA=\"URL\",\"**WEB**/t/exlon/post?ID=201800001&String=%c:%s:%c:%c%c:%s\"\r\n",status[0],number,fix, satellites[0], satellites[1], GPS1); //
-//				printf("AT+HTTPPARA=\"URL\",\"**WEB**/t/madiva/post?ID=201800001&String=%c:%s:%c:%c%c:%s\"\r\n",status[0],number,fix, satellites[0], satellites[1], GPS1);
+//				printf("AT+HTTPPARA=\"URL\",\"www.SITE.com/api/events?ID=201800002&String=%c:%s:%c:%c%c:%s\"\r\n",status[0],Digits,fix, satellites[0], satellites[1], RMC);
+				printf("AT+HTTPPARA=\"URL\",\"http://SITE.com/t/exlon/post?ID=201800001&String=%c:%s:%c:%c%c:%s\"\r\n",status[0],Digits,fix, satellites[0], satellites[1], RMC);
+//				printf("AT+HTTPPARA=\"URL\",\"http://SITE.com/t/madiva/post?ID=201800001&String=%c:%s:%c:%c%c:%s\"\r\n",status[0],Digits,fix, satellites[0], satellites[1], RMC);
 //				sample_GPS_data(GGA,RMC,Digits);
 				_delay_ms(2000);
 				free(GGA); //The memory location pointed by GGA is freed. Otherwise it will cause error
@@ -509,3 +568,4 @@ void grabGPS()
 } //Serial1.available
 //return 0;
 } //testGPS
+
